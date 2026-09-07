@@ -6,7 +6,8 @@
 // =============================================================================
 
 // Motor commands
-constexpr char CMD_MOTOR     = 'm';  // m L R - set motor speeds
+constexpr char CMD_MOTOR     = 'm';  // m L R - set wheel velocity, counts/loop
+constexpr char CMD_PID       = 'y';  // y P:D:I:O - set velocity PID gains
 constexpr char CMD_STOP      = 'k';  // k - emergency stop
 constexpr char CMD_BRAKE     = 'b';  // b - active brake
 

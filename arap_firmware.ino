@@ -26,9 +26,35 @@ struct GPSData {
 GPSData gpsData;
 
 // --- MOTOR STATE ---
+// targetLeft/Right are VELOCITY setpoints in encoder counts per control loop.
+// currentLeft/Right are the PWM values the PID has settled on.
 int16_t targetLeft = 0, targetRight = 0;
 int16_t currentLeft = 0, currentRight = 0;
 unsigned long lastMotorUpdate = 0;
+
+// --- VELOCITY PID ---
+int16_t pidKp = PID_KP_DEFAULT;
+int16_t pidKd = PID_KD_DEFAULT;
+int16_t pidKi = PID_KI_DEFAULT;
+int16_t pidKo = PID_KO_DEFAULT;
+
+struct WheelPID {
+    long prevEnc = 0;      // encoder count at the last update
+    int16_t prevErr = 0;   // previous error, for the derivative term
+    int32_t integral = 0;  // accumulated error
+    int16_t output = 0;    // current PWM
+    int16_t measured = 0;  // counts moved in the last loop, for reporting
+};
+
+WheelPID pidLeft, pidRight;
+
+void resetPID(WheelPID &p, long enc) {
+    p.prevEnc = enc;
+    p.prevErr = 0;
+    p.integral = 0;
+    p.output = 0;
+    p.measured = 0;
+}
 
 // --- ENCODER STATE ---
 volatile long encoderLeftCount  = 0;
@@ -171,12 +197,64 @@ void brakeMotors() {
     Led::showDirection(0, 0);
 }
 
+// One PID step for a wheel. target is counts per loop, enc the live tick
+// count. Returns the PWM to apply.
+int16_t stepPID(WheelPID &p, int16_t target, long enc) {
+    int16_t moved = (int16_t)(enc - p.prevEnc);
+    p.prevEnc = enc;
+    p.measured = moved;
+
+    int16_t err = target - moved;
+
+    // Incremental form: the PID adjusts the existing PWM rather than
+    // recomputing it, so the output carries the steady-state effort needed
+    // to hold speed on a ramp or under load.
+    int32_t delta = ((int32_t)pidKp * err
+                     + (int32_t)pidKd * (err - p.prevErr)
+                     + (int32_t)pidKi * p.integral) / pidKo;
+    int32_t out = (int32_t)p.output + delta;
+
+    p.prevErr = err;
+
+    // Anti-windup: only accumulate while we still have authority to act.
+    if (out >= PWM_MAX) {
+        out = PWM_MAX;
+    } else if (out <= PWM_MIN) {
+        out = PWM_MIN;
+    } else {
+        p.integral += err;
+    }
+
+    p.output = (int16_t)out;
+    return p.output;
+}
+
 void updateMotors() {
     if (millis() - lastMotorUpdate < MOTOR_UPDATE_MS) return;
     lastMotorUpdate = millis();
 
-    currentLeft  = rampValue(currentLeft, targetLeft);
-    currentRight = rampValue(currentRight, targetRight);
+    long encL, encR;
+    noInterrupts();
+    encL = encoderLeftCount;
+    encR = encoderRightCount;
+    interrupts();
+
+    // A zero setpoint means stop, not "hold position" - clear the PID so a
+    // stale integral cannot creep the wheels while the robot is meant to be
+    // still, and so applyPWM's deadband floor is not applied to a stop.
+    if (targetLeft == 0 && targetRight == 0) {
+        resetPID(pidLeft, encL);
+        resetPID(pidRight, encR);
+        currentLeft = currentRight = 0;
+        analogWrite(RPWM_L, 0);
+        analogWrite(LPWM_L, 0);
+        analogWrite(RPWM_R, 0);
+        analogWrite(LPWM_R, 0);
+        return;
+    }
+
+    currentLeft  = stepPID(pidLeft, targetLeft, encL);
+    currentRight = stepPID(pidRight, targetRight, encR);
 
     applyPWM(RPWM_L, LPWM_L, currentLeft,  INVERT_LEFT_MOTOR);
     applyPWM(RPWM_R, LPWM_R, currentRight, INVERT_RIGHT_MOTOR);
@@ -302,8 +380,19 @@ void processCommand(char* cmd) {
         case CMD_MOTOR: {
             int16_t left = 0, right = 0;
             if (sscanf(cmd + 1, "%d %d", &left, &right) == 2) {
-                left  = constrain(left,  PWM_MIN, PWM_MAX);
-                right = constrain(right, PWM_MIN, PWM_MAX);
+                // Velocity setpoint in encoder counts per control loop, NOT
+                // PWM. The PID in updateMotors() converts it to PWM.
+                left  = constrain(left,  -MAX_COUNTS_PER_LOOP, MAX_COUNTS_PER_LOOP);
+                right = constrain(right, -MAX_COUNTS_PER_LOOP, MAX_COUNTS_PER_LOOP);
+                // Starting from rest, clear stale PID state so the first step
+                // does not act on an error accumulated before this command.
+                if (targetLeft == 0 && targetRight == 0) {
+                    noInterrupts();
+                    long el = encoderLeftCount, er = encoderRightCount;
+                    interrupts();
+                    resetPID(pidLeft, el);
+                    resetPID(pidRight, er);
+                }
                 targetLeft  = left;
                 targetRight = right;
                 enableMotors();
@@ -313,7 +402,34 @@ void processCommand(char* cmd) {
                 Serial.print(F(" R="));
                 Serial.println(right);
             } else {
-                Serial.println(F("Usage: m <left> <right>  (e.g. m 150 150)"));
+                Serial.println(F("Usage: m <left> <right>  counts/loop, e.g. m 30 30"));
+            }
+            break;
+        }
+        case CMD_PID: {
+            int kp = 0, kd = 0, ki = 0, ko = 0;
+            if (sscanf(cmd + 1, "%d:%d:%d:%d", &kp, &kd, &ki, &ko) == 4) {
+                if (ko <= 0) {
+                    // Ko is the output divisor; zero would divide by zero and
+                    // negative would invert the loop into positive feedback.
+                    Serial.print(F("PID rejected: Ko must be > 0, got "));
+                    Serial.println(ko);
+                } else {
+                    pidKp = kp;
+                    pidKd = kd;
+                    pidKi = ki;
+                    pidKo = ko;
+                    Serial.print(F("PID: P="));
+                    Serial.print(pidKp);
+                    Serial.print(F(" D="));
+                    Serial.print(pidKd);
+                    Serial.print(F(" I="));
+                    Serial.print(pidKi);
+                    Serial.print(F(" O="));
+                    Serial.println(pidKo);
+                }
+            } else {
+                Serial.println(F("Usage: y <P>:<D>:<I>:<O>  (e.g. y 20:12:0:50)"));
             }
             break;
         }

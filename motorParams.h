@@ -60,6 +60,28 @@ constexpr bool INVERT_RIGHT_ENCODER = true;
 constexpr bool INVERT_LEFT_MOTOR  = true;
 constexpr bool INVERT_RIGHT_MOTOR = true;
 
+// =============================================================================
+//                            VELOCITY PID
+// =============================================================================
+// The 'm' command carries a VELOCITY setpoint in encoder counts per control
+// loop, not a PWM value. ros2_control sends
+//     counts_per_loop = rad_per_sec / rads_per_count / loop_rate
+// with loop_rate 40, which matches MOTOR_UPDATE_MS = 25 ms below.
+//
+// Integer maths throughout, ros_arduino_bridge convention:
+//     output += (KP*err + KD*(err - prev_err) + KI*integral) / KO
+// KO is the output divisor that lets integer gains express fractions.
+//
+// ROS can override these with the 'y' command. Its pid_o is currently 0,
+// which would divide by zero, so setPIDGains() rejects KO <= 0.
+constexpr int16_t PID_KP_DEFAULT = 20;
+constexpr int16_t PID_KD_DEFAULT = 12;
+constexpr int16_t PID_KI_DEFAULT = 0;
+constexpr int16_t PID_KO_DEFAULT = 50;
+
+// Full scale is about 62 counts/loop (0.42 m/s at the current wheel radius).
+constexpr int16_t MAX_COUNTS_PER_LOOP = 120;
+
 // PWM limits
 constexpr int16_t PWM_MAX = 255;
 constexpr int16_t PWM_MIN = -255;
