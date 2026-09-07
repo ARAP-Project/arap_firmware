@@ -7,30 +7,50 @@
 //                          MOTOR PIN CONFIGURATION
 // =============================================================================
 
+// Motor pin groups swapped 2026-09-05: the pins previously labelled LEFT are
+// physically wired to the RIGHT motor. Measured by commanding a CCW turn - the
+// firmware drove its "left" channel while the robot's physical RIGHT wheel
+// responded, so the robot turned the wrong way. Forward travel was unaffected
+// (2 m accurate to 1%), the signature of a left/right swap rather than
+// inverted polarity. The ENCODERS are not crossed.
+
 // LEFT MOTOR - BTS7960 Driver
-constexpr uint8_t RPWM_L = 7;
-constexpr uint8_t LPWM_L = 6;
-constexpr uint8_t REN_L  = 22;
-constexpr uint8_t LEN_L  = 23;
+constexpr uint8_t RPWM_L = 11;
+constexpr uint8_t LPWM_L = 10;
+constexpr uint8_t REN_L  = 24;
+constexpr uint8_t LEN_L  = 25;
 
 // RIGHT MOTOR - BTS7960 Driver
-constexpr uint8_t RPWM_R = 11;
-constexpr uint8_t LPWM_R = 10;
-constexpr uint8_t REN_R  = 24;
-constexpr uint8_t LEN_R  = 25;
+constexpr uint8_t RPWM_R = 7;
+constexpr uint8_t LPWM_R = 6;
+constexpr uint8_t REN_R  = 22;
+constexpr uint8_t LEN_R  = 23;
 
 // =============================================================================
 //                       ENCODER PIN CONFIGURATION
 //              Interrupt-capable pins on Arduino Mega 2560
 // =============================================================================
 
+// Encoders are crossed AND count backwards. Measured 2026-09-07 by turning
+// the physical LEFT wheel forward by hand with the motors idle: it drove
+// right_wheel_joint to -2.98 rad while left_wheel_joint stayed at zero. So
+// pins 18/19 are the LEFT wheel, and forward rotation counts negative.
+//
+// The two faults cancel during rotation - the wheels turn opposite ways, so
+// the swap and the inversion negate each other - and only show up in straight
+// line travel. Verify with a single hand-turned wheel, never with a rotation.
+
 // LEFT ENCODER
-constexpr uint8_t ENC_L_A = 2;   // INT0
-constexpr uint8_t ENC_L_B = 3;   // INT1
+constexpr uint8_t ENC_L_A = 18;  // INT5
+constexpr uint8_t ENC_L_B = 19;  // INT4
 
 // RIGHT ENCODER
-constexpr uint8_t ENC_R_A = 18;  // INT5
-constexpr uint8_t ENC_R_B = 19;  // INT4
+constexpr uint8_t ENC_R_A = 2;   // INT0
+constexpr uint8_t ENC_R_B = 3;   // INT1
+
+// Encoder tick direction, mirroring the INVERT_*_MOTOR pattern below.
+constexpr bool INVERT_LEFT_ENCODER  = true;
+constexpr bool INVERT_RIGHT_ENCODER = true;
 
 // =============================================================================
 //                          MOTOR BEHAVIOR SETTINGS

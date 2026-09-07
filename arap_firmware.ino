@@ -51,35 +51,38 @@ uint8_t cmdIndex = 0;
 //                       ENCODER ISR (Interrupt Routines)
 // =============================================================================
 
+constexpr int8_t LEFT_ENC_DIR  = INVERT_LEFT_ENCODER  ? -1 : 1;
+constexpr int8_t RIGHT_ENC_DIR = INVERT_RIGHT_ENCODER ? -1 : 1;
+
 void encoderLeftA_ISR() {
     if (digitalRead(ENC_L_A) == digitalRead(ENC_L_B)) {
-        encoderLeftCount--;
+        encoderLeftCount -= LEFT_ENC_DIR;
     } else {
-        encoderLeftCount++;
+        encoderLeftCount += LEFT_ENC_DIR;
     }
 }
 
 void encoderLeftB_ISR() {
     if (digitalRead(ENC_L_A) == digitalRead(ENC_L_B)) {
-        encoderLeftCount++;
+        encoderLeftCount += LEFT_ENC_DIR;
     } else {
-        encoderLeftCount--;
+        encoderLeftCount -= LEFT_ENC_DIR;
     }
 }
 
 void encoderRightA_ISR() {
     if (digitalRead(ENC_R_A) == digitalRead(ENC_R_B)) {
-        encoderRightCount--;
+        encoderRightCount -= RIGHT_ENC_DIR;
     } else {
-        encoderRightCount++;
+        encoderRightCount += RIGHT_ENC_DIR;
     }
 }
 
 void encoderRightB_ISR() {
     if (digitalRead(ENC_R_A) == digitalRead(ENC_R_B)) {
-        encoderRightCount++;
+        encoderRightCount += RIGHT_ENC_DIR;
     } else {
-        encoderRightCount--;
+        encoderRightCount -= RIGHT_ENC_DIR;
     }
 }
 
