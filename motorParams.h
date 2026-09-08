@@ -115,7 +115,7 @@ constexpr uint32_t ULTRA_BAUD = 9600;
 constexpr uint8_t LED_PIN = 12;
 
 // Number of LEDs on the strip
-constexpr uint8_t NUM_LEDS = 16;
+constexpr uint8_t NUM_LEDS = 110;
 
 // LED brightness (0-255)
 constexpr uint8_t LED_BRIGHTNESS = 150;
