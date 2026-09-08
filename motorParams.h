@@ -3,131 +3,144 @@
 
 #include <Arduino.h>
 
-// =============================================================================
-//                          MOTOR PIN CONFIGURATION
-// =============================================================================
-
+// ---------- MOTOR PINS (BTS7960) ----------
 // Motor pin groups swapped 2026-09-05: the pins previously labelled LEFT are
 // physically wired to the RIGHT motor. Measured by commanding a CCW turn - the
 // firmware drove its "left" channel while the robot's physical RIGHT wheel
 // responded, so the robot turned the wrong way. Forward travel was unaffected
 // (2 m accurate to 1%), the signature of a left/right swap rather than
-// inverted polarity. The ENCODERS are not crossed.
-
-// LEFT MOTOR - BTS7960 Driver
+// inverted polarity. Verified unchanged as of this merge (2026-09-08) - the
+// harness has not been touched since the original test.
 constexpr uint8_t RPWM_L = 11;
 constexpr uint8_t LPWM_L = 10;
 constexpr uint8_t REN_L  = 24;
 constexpr uint8_t LEN_L  = 25;
-
-// RIGHT MOTOR - BTS7960 Driver
 constexpr uint8_t RPWM_R = 7;
 constexpr uint8_t LPWM_R = 6;
 constexpr uint8_t REN_R  = 22;
 constexpr uint8_t LEN_R  = 23;
 
-// =============================================================================
-//                       ENCODER PIN CONFIGURATION
-//              Interrupt-capable pins on Arduino Mega 2560
-// =============================================================================
-
-// Encoders are crossed AND count backwards. Measured 2026-09-07 by turning
+// ---------- ENCODER PINS ----------
+// Encoders are crossed: pins 18/19 are the physical LEFT wheel, not what the
+// unswapped assignment below would suggest. Measured 2026-09-07 by turning
 // the physical LEFT wheel forward by hand with the motors idle: it drove
-// right_wheel_joint to -2.98 rad while left_wheel_joint stayed at zero. So
-// pins 18/19 are the LEFT wheel, and forward rotation counts negative.
-//
-// The two faults cancel during rotation - the wheels turn opposite ways, so
-// the swap and the inversion negate each other - and only show up in straight
-// line travel. Verify with a single hand-turned wheel, never with a rotation.
+// right_wheel_joint to -2.98 rad while left_wheel_joint stayed at zero.
+// INVERT_LEFT/RIGHT_ENCODER below (both true on either branch of this merge)
+// handle the "counts backwards" half of that same finding - this pin swap is
+// the other half, and it does not show up as a build error if you get it
+// wrong, only as odometry that quietly attributes each wheel's motion to the
+// other one. Verify with a single hand-turned wheel, never with a rotation
+// (the two faults cancel during rotation and only show up in straight travel).
+constexpr uint8_t ENC_L_A = 18;
+constexpr uint8_t ENC_L_B = 19;
+constexpr uint8_t ENC_R_A = 2;
+constexpr uint8_t ENC_R_B = 3;
 
-// LEFT ENCODER
-constexpr uint8_t ENC_L_A = 18;  // INT5
-constexpr uint8_t ENC_L_B = 19;  // INT4
-
-// RIGHT ENCODER
-constexpr uint8_t ENC_R_A = 2;   // INT0
-constexpr uint8_t ENC_R_B = 3;   // INT1
-
-// Encoder tick direction, mirroring the INVERT_*_MOTOR pattern below.
+// ---------- DIRECTION INVERSION ----------
+constexpr bool INVERT_LEFT_MOTOR    = true;
+constexpr bool INVERT_RIGHT_MOTOR   = true;
 constexpr bool INVERT_LEFT_ENCODER  = true;
 constexpr bool INVERT_RIGHT_ENCODER = true;
 
-// =============================================================================
-//                          MOTOR BEHAVIOR SETTINGS
-// =============================================================================
-
-// Direction inversion (set true if motor spins opposite to expected)
-constexpr bool INVERT_LEFT_MOTOR  = true;
-constexpr bool INVERT_RIGHT_MOTOR = true;
-
-// =============================================================================
-//                            VELOCITY PID
-// =============================================================================
-// The 'm' command carries a VELOCITY setpoint in encoder counts per control
-// loop, not a PWM value. ros2_control sends
-//     counts_per_loop = rad_per_sec / rads_per_count / loop_rate
-// with loop_rate 40, which matches MOTOR_UPDATE_MS = 25 ms below.
-//
-// Integer maths throughout, ros_arduino_bridge convention:
-//     output += (KP*err + KD*(err - prev_err) + KI*integral) / KO
-// KO is the output divisor that lets integer gains express fractions.
-//
-// ROS can override these with the 'y' command. Its pid_o is currently 0,
-// which would divide by zero, so setPIDGains() rejects KO <= 0.
-constexpr int16_t PID_KP_DEFAULT = 20;
-constexpr int16_t PID_KD_DEFAULT = 12;
-constexpr int16_t PID_KI_DEFAULT = 0;
-constexpr int16_t PID_KO_DEFAULT = 50;
-
-// Full scale is about 62 counts/loop (0.42 m/s at the current wheel radius).
-constexpr int16_t MAX_COUNTS_PER_LOOP = 120;
-
-// PWM limits
-constexpr int16_t PWM_MAX = 255;
-constexpr int16_t PWM_MIN = -255;
-
-// Minimum PWM to overcome motor stiction (wiper motors need higher value)
-constexpr uint8_t MOTOR_DEADBAND = 35;
-
-// Acceleration rate (PWM units per update)
-constexpr uint8_t ACCEL_RATE = 8;
-
-// Deceleration rate (faster than accel for safety)
-constexpr uint8_t DECEL_RATE = 15;
-
-// Motor update interval (milliseconds)
+// ---------- PWM LIMITS ----------
+constexpr int16_t PWM_MAX         = 255;
+constexpr int16_t PWM_MIN         = -255;
+constexpr uint8_t MOTOR_DEADBAND  = 5;
 constexpr uint8_t MOTOR_UPDATE_MS = 25;
 
-// =============================================================================
-//                      ULTRASONIC SENSOR CONFIGURATION
-//               A0221AU / A02YYUW via UART (9600 baud)
-// =============================================================================
+// ---------- SPEED SCALE ----------
+// Calibrated from 'x' table: 255 PWM -> ~2936 ticks/sec -> /40 loops = ~73 ticks/loop.
+constexpr int16_t MAX_TICKS_PER_LOOP  = 65;
+constexpr int16_t MAX_COUNTS_PER_LOOP = MAX_TICKS_PER_LOOP;
 
-// Left sensor on Serial2 (RX2 = pin 17)
-// Right sensor on Serial3 (RX3 = pin 15)
-constexpr uint32_t ULTRA_BAUD = 9600;
-
-// =============================================================================
-//                          LED CONFIGURATION
-// =============================================================================
-
-// LED strip data pin
-constexpr uint8_t LED_PIN = 12;
-
-// Number of LEDs on the strip
-constexpr uint8_t NUM_LEDS = 110;
-
-// LED brightness (0-255)
-constexpr uint8_t LED_BRIGHTNESS = 150;
-
-// LED update interval (milliseconds)
-constexpr uint8_t LED_UPDATE_MS = 30;
+// ---------- STICTION KICK ----------
+// CHANGED: was 150. Calibration showed break-free at ~30 PWM, so a 150 PWM
+// kick was wildly oversized and caused the lurch/jerk on start. 45 gives a
+// small margin above break-free without slamming the motor.
+constexpr int16_t STICTION_KICK_PWM_MIN = 45;
+constexpr uint8_t STICTION_KICK_LOOPS   = 4;
 
 // =============================================================================
-//                          SERIAL CONFIGURATION
+//   LOW-SPEED LIMITS  (derived from 'x' calibration)
+// =============================================================================
+// Calibration showed the motors do not turn below ~30 PWM FROM A STANDSTILL,
+// and at 30 PWM they already produce ~8 ticks/loop. So the SLOWEST achievable
+// COLD-START steady speed is ~8 ticks/loop. Targets below that cannot break
+// free from rest. ROS should not command below MIN_MOVE_TICKS.
+//
+//   MOTOR_MIN_MOVE_PWM  : just above the 30 PWM break-free point, for margin.
+//                         NOW APPLIED ONLY WHEN THE WHEEL IS STALLED (see
+//                         WHEEL_STALL_TICKS), not while it is already turning.
+//   MIN_MOVE_TICKS      : floor applied to nonzero targets so tiny commands
+//                         map to the slowest real speed instead of stalling.
+//   WHEEL_STALL_TICKS   : measured ticks/loop below which the wheel is treated
+//                         as stalled; only then is the break-free PWM floor
+//                         forced. Once moving, the motor holds far below
+//                         MOTOR_MIN_MOVE_PWM, so forcing 35 PWM on a moving
+//                         wheel caused the surge/coast jerking at low speed.
+// -----------------------------------------------------------------------------
+constexpr int16_t MOTOR_MIN_MOVE_PWM = 35;   // break-free ~30 PWM + margin
+// CHANGED: was 1. The real measured steady-state floor is ~8 ticks/loop.
+// With this set to 8, a command like 'm 5 5' is clamped up to the slowest
+// speed the motor can actually hold, instead of fighting the PWM floor and
+// glitching with a limit-cycle.
+constexpr int16_t MIN_MOVE_TICKS     = 8;    // slowest achievable ticks/loop
+// NEW: stall-detection window. If the measured delta this cycle is within
+// +/- this many ticks of zero, the wheel is considered stalled and the
+// break-free PWM floor is allowed to fire. Above it, the PID is free to use
+// the full low PWM range for smooth steady low-speed running. Tighten to 1
+// if you still see an occasional hiccup near MIN_MOVE_TICKS.
+constexpr long    WHEEL_STALL_TICKS  = 2;
+
+// ---------- TARGET SLEW LIMIT (optional smoothing) ----------
+// Max change in target ticks/loop applied per control cycle. Makes large
+// speed jumps (e.g. m 5 5 -> m 35 35) ramp over a few loops instead of
+// stepping instantly. Set high (e.g. >= MAX_TICKS_PER_LOOP) to effectively
+// disable. 8 ticks/loop per 25ms cycle is a gentle but responsive ramp.
+constexpr int16_t TARGET_SLEW_STEP = 8;
 // =============================================================================
 
-constexpr uint32_t SERIAL_BAUD = 57600;
-constexpr uint8_t  CMD_BUFFER_SIZE = 48;
+// ---------- PER-MOTOR PWM BIAS (defaults; live-tunable via 'z') -------------
+constexpr int16_t DEFAULT_LEFT_PWM_BIAS  = 0;
+constexpr int16_t DEFAULT_RIGHT_PWM_BIAS = 0;   // was 15 - motors well-matched
+
+// ---------- PID DEFAULTS ----------
+// CHANGED: Kp 2.5 -> 1.2 and PID_CORRECTION_MAX 150 -> 80.
+// At low speed (~8 ticks/loop) the +/-1 tick quantization is ~12% of the
+// signal. With Kp=2.5 the controller chased that quantization noise and,
+// together with the unconditional PWM floor, produced the limit-cycle
+// jerking seen on 'm 8 8'. A softer Kp lets Ki do the steady-state work and
+// the lower correction clamp keeps single-cycle overshoots small. If higher
+// speeds now feel sluggish to settle, nudge Kp back up toward 1.6-1.8.
+constexpr float DEFAULT_PID_KP    = 1.2;     // was 2.5 - too hot at low speed
+constexpr float DEFAULT_PID_KI    = 1.2;
+constexpr float DEFAULT_PID_KD    = 0.1;
+constexpr float DEFAULT_PID_I_MAX = 120.0;   // was 300 - lower = less low-speed lurch
+constexpr int16_t PID_CORRECTION_MAX = 80;   // was 150 - cap big single-cycle swings
+
+// ---------- ULTRASONIC ----------
+constexpr uint32_t ULTRA_BAUD   = 9600;
+constexpr int16_t  ULTRA_MIN_MM = 30;
+constexpr int16_t  ULTRA_MAX_MM = 4500;
+
+// ---------- LED ----------
+constexpr uint8_t LED_PIN        = 12;
+constexpr uint8_t NUM_LEDS       = 110;
+constexpr uint8_t LED_BRIGHTNESS = 100;
+constexpr uint8_t LED_UPDATE_MS  = 80;
+
+// ---------- SERIAL ----------
+constexpr uint32_t SERIAL_BAUD     = 57600;
+constexpr uint8_t  CMD_BUFFER_SIZE = 64;
+
+// ---------- GPS ----------
+constexpr uint32_t I2C_CLOCK_HZ = 400000;
+constexpr uint8_t  GPS_NAV_FREQ = 5;
+
+// ---------- DELIVERY LOCK ----------
+constexpr uint8_t  LOCK_PIN            = 26;
+constexpr uint16_t LOCK_PULSE_MS       = 1000;  // pulse duration for brief unlock
+constexpr bool     LOCK_ACTIVE_LOW     = false; // SSR is active-HIGH
+constexpr uint32_t LOCK_MAX_HOLD_MS    = 60000; // auto re-lock after 60s safety
 
 #endif
