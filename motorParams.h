@@ -4,20 +4,37 @@
 #include <Arduino.h>
 
 // ---------- MOTOR PINS (BTS7960) ----------
-constexpr uint8_t RPWM_L = 7;
-constexpr uint8_t LPWM_L = 6;
-constexpr uint8_t RPWM_R = 11;
-constexpr uint8_t LPWM_R = 10;
-constexpr uint8_t REN_L  = 22;
-constexpr uint8_t LEN_L  = 23;
-constexpr uint8_t REN_R  = 24;
-constexpr uint8_t LEN_R  = 25;
+// Motor pin groups swapped 2026-09-05: the pins previously labelled LEFT are
+// physically wired to the RIGHT motor. Measured by commanding a CCW turn - the
+// firmware drove its "left" channel while the robot's physical RIGHT wheel
+// responded, so the robot turned the wrong way. Forward travel was unaffected
+// (2 m accurate to 1%), the signature of a left/right swap rather than
+// inverted polarity. Verified unchanged as of this merge (2026-09-08) - the
+// harness has not been touched since the original test.
+constexpr uint8_t RPWM_L = 11;
+constexpr uint8_t LPWM_L = 10;
+constexpr uint8_t REN_L  = 24;
+constexpr uint8_t LEN_L  = 25;
+constexpr uint8_t RPWM_R = 7;
+constexpr uint8_t LPWM_R = 6;
+constexpr uint8_t REN_R  = 22;
+constexpr uint8_t LEN_R  = 23;
 
 // ---------- ENCODER PINS ----------
-constexpr uint8_t ENC_L_A = 2;
-constexpr uint8_t ENC_L_B = 3;
-constexpr uint8_t ENC_R_A = 18;
-constexpr uint8_t ENC_R_B = 19;
+// Encoders are crossed: pins 18/19 are the physical LEFT wheel, not what the
+// unswapped assignment below would suggest. Measured 2026-09-07 by turning
+// the physical LEFT wheel forward by hand with the motors idle: it drove
+// right_wheel_joint to -2.98 rad while left_wheel_joint stayed at zero.
+// INVERT_LEFT/RIGHT_ENCODER below (both true on either branch of this merge)
+// handle the "counts backwards" half of that same finding - this pin swap is
+// the other half, and it does not show up as a build error if you get it
+// wrong, only as odometry that quietly attributes each wheel's motion to the
+// other one. Verify with a single hand-turned wheel, never with a rotation
+// (the two faults cancel during rotation and only show up in straight travel).
+constexpr uint8_t ENC_L_A = 18;
+constexpr uint8_t ENC_L_B = 19;
+constexpr uint8_t ENC_R_A = 2;
+constexpr uint8_t ENC_R_B = 3;
 
 // ---------- DIRECTION INVERSION ----------
 constexpr bool INVERT_LEFT_MOTOR    = true;
